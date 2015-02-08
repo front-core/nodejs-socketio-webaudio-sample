@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>リアルタイム通信して音声を再生(NodeJS + Express + Socket.io + WebAudioAPI on Heroku)</title>
+<style>
+
+html { height: 100%; }
+body {
+	font-family: ArialMT,"Hiragino Kaku Gothic ProN","ヒラギノ角ゴ ProN W3","メイリオ",sans-serif;
+	margin: 0;
+	padding: 0;
+	height: 100%;
+	-webkit-text-size-adjust: 100%;
+	 -webkit-tap-highlight-color: transparent;
+	position: relative;
+}
+
+button {
+	display: block;
+	-webkit-appearance: none;
+	appearance: none;
+	background: #ddd;
+	width: 100px;
+	height: 100px;
+	-webkit-border-radius: 10px;
+	border-radius: 10px;
+	border: 1px solid #aaa;
+	-webkit-user-select: none;
+	user-select: none;
+}
+button:focus {
+	outline: none;
+}
+.tap {
+	background: #bbb;
+}
+#kick {
+	position: absolute;
+	top: 260px;
+	left: 50%;
+	margin-left: -50px;
+}
+#cymbal {
+	position: absolute;
+	top: 10px;
+	left: 10px;
+}
+#hat {
+	position: absolute;
+	top: 130px;
+	left: 10px;
+}
+#snare {
+	position: absolute;
+	top: 130px;
+	right: 10px;
+}
+#result {
+	opacity: 0;
+	color: #ffff00;
+	text-align: center;
+	width: 200px;
+	margin: -29px 0 0 -100px;
+	padding: 20px 0;
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	pointer-events: none;
+	background-color: rgba(0,0,0,0.6);
+	-webkit-border-radius: 5px;
+}
+#result.popup { -webkit-animation: popup 0.6s linear 1; }
+@-webkit-keyframes popup {
+	0% { opacity: 0; -webkit-transform: scale3d(0.9, 0.9, 0.9); -webkit-transform: scale(0.9, 0.9); }
+	5% { opacity: 1; -webkit-transform: scale3d(1, 1, 1); -webkit-transform: scale(1, 1); }
+	100% { opacity: 0; -webkit-transform: scale3d(1.1, 1.1, 1.1); -webkit-transform: scale(1.1, 1.1); }
+}
+#splash-image {
+	text-align: center;
+	width: 100%;
+	height: 100%;
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	background-color: rgba(255,255,255,0.8);
+	background-image: url(logo.png);
+	background-position: 50% 50%;
+	background-repeat: no-repeat;
+	-webkit-background-size: 200px 35px;
+}
+.none { display: none; }
+#splash-image.fade-out { -webkit-animation: fade-out 0.3s linear 1; }
+@-webkit-keyframes fade-out {
+	0% { opacity: 1; -webkit-transform: scale(1); }
+	80% { opacity: 1; -webkit-transform: scale(0.97); }
+	100% { opacity: 0; -webkit-transform: scale(2); }
+}
+
+</style>
+</head>
+<body>
+	
+	<button id="kick"> kick </button>
+	<button id="cymbal"> cymbal </button>
+	<button id="hat"> hat </button>
+	<button id="snare"> snare </button>
+	<div id="result"></div>
+	<div id="splash-image"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+;(function (window, undefined) {
+	
+	// socket.ioに接続する
+	// var socketio = io.connect('http://localhost:8000'); // localで試す時
+	var socketio = io.connect('https://nodejs-socketio-webaudio.herokuapp.com/'); // Herokuで試す時
+	
+	var drumObj = {}; // ドラムのbutton、音声情報を格納するObject
+	
+	var isTouchDevice = 'ontouchend' in document;
+	var eventNames = {
+		start: isTouchDevice ? 'touchstart' : 'mousedown',
+		move:  isTouchDevice ? 'touchmove'  : 'mousemove',
+		end:   isTouchDevice ? 'touchend'   : 'mouseup',
+		click: 'click'
+	};
+	
+	var result = document.getElementById('result'),　// ポップアップ用
+		splashImage = document.getElementById('splash-image'); // スプラッシュ画像
+	
+	function AudioBufferLoader(ele, url) {
+		window.AudioContext = window.AudioContext || window.webkitAudioContext;
+		try {
+			this.context = new AudioContext;
+		}
+		catch(e) {
+			alert('Web Audio API is not supported in this browser');
+		}
+		this.ele = document.getElementById(ele);
+		this.url = url;
+		this.buffer = null;
+	}
+
+	AudioBufferLoader.prototype = {
+		loadBuffer: function(url) {
+			var _this = this;
+
+			var request = new XMLHttpRequest();
+			request.open('get', url, true);
+			request.responseType = 'arraybuffer';
+
+			request.onload = function() {
+				_this.context.decodeAudioData(
+					request.response,
+					function(buffer) {
+						if (! buffer) {
+							alert('error decodeing file data: ' + url);
+							return;
+						}
+						_this.buffer = buffer;
+						_this.events();
+					},
+					function(error) {
+						alert('decodeAudioData error', error);
+					}
+				);
+			};
+			request.onerror = function() {
+				alert('AudioBufferLoader: XHR error');
+			};
+
+			request.send();
+		},
+
+		events: function() {
+			var _this = this;
+			var context = _this.context;
+			
+			_this.ele.addEventListener(eventNames.start, function() {
+				this.className = '';
+				this.className = 'tap';
+				result.className = "";
+				
+				// socket.ioで全デバイスで同期させる為、タップイベントでは再生せずサーバーからの返答時に再生
+				// var source = context.createBufferSource();
+				// source.buffer = _this.buffer;
+				// source.connect(context.destination);
+				// source.start(0);
+				
+				// クライアントからサーバーにボタンidを送る
+				socketio.emit("from_client", this.id);
+			});
+			_this.ele.addEventListener(eventNames.end, function() {
+				this.className = '';
+			});
+		},
+
+		load: function() {
+			var _this = this;
+			_this.loadBuffer(_this.url);
+		},
+		
+		// 音声データをセット
+		set: function () {
+			var _this = this;
+			
+			_this.source = _this.context.createBufferSource();
+			_this.source.buffer = _this.buffer;
+			_this.source.connect(_this.context.destination);
+		}
+	};
+	
+	drumObj.kick = new AudioBufferLoader('kick', '/sound/kick.m4a');
+	drumObj.kick.load();
+
+	drumObj.cymbal = new AudioBufferLoader('cymbal', '/sound/cymbal.m4a');
+	drumObj.cymbal.load();
+
+	drumObj.hat = new AudioBufferLoader('hat', '/sound/hat.m4a');
+	drumObj.hat.load();
+
+	drumObj.snare = new AudioBufferLoader('snare', '/sound/snare.m4a');
+	drumObj.snare.load();
+	
+	// スプラッシュ画像を押した時に音声データをロード
+	// iPhone/Androidで最初の音声ロードだけはユーザーアクションが必要な制約がある為(PCにはこの制約はなさそう)
+	splashImage.addEventListener(eventNames.start, function(){
+		// 音声データをセット
+		drumObj.kick.set();
+		drumObj.cymbal.set();
+		drumObj.hat.set();
+		drumObj.snare.set();
+		
+		// スプラッシュ画像をフェードアウト
+		this.className = 'fade-out';
+		this.addEventListener('webkitAnimationEnd', function(){
+			this.className = 'none';
+		});
+	});
+	
+	// サーバーから "from_server" が送られてくるのを監視
+	socketio.on("from_server", function(id){
+		// サーバーから返されたid(buttonのid名)から音声を再生
+		// start()だけを複数回実行出来ない仕様のようなので、毎回createBufferSource()してから再生
+		drumObj[id].source = drumObj[id].context.createBufferSource();
+		drumObj[id].source.buffer = drumObj[id].buffer;
+		drumObj[id].source.connect(drumObj[id].context.destination);
+		drumObj[id].source.start(0);
+		
+		// ポップアップを表示
+		result.className = "popup";
+		result.innerHTML = id + '!';
+		result.addEventListener("webkitAnimationEnd", function(){
+			result.className = "";
+		});
+	});
+	
+}(this));
+</script>
+</body>
+</html>
