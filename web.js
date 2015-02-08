@@ -5,7 +5,6 @@ var express = require('express');
 	path = require('path'),
 	io = require('socket.io').listen(server);
 
-// 
 server.listen(process.env.PORT || 8000);
 
 // 静的ファイルの場所を指定する(この配下で、CSS,JS,IMG,音声ファイルなどの静的ファイルが使用可能に)
