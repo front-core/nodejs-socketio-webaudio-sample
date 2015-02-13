@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>リアルタイム通信して音声を再生(NodeJS + Express + Socket.io + WebAudioAPI on Heroku)</title>
+<title>リアルタイム通信して複数デバイス上で音声を再生する | Node.js(express) + Socket.IO + Web Audio API on Heroku</title>
 <style>
 
 html { height: 100%; }
@@ -14,7 +14,9 @@ body {
 	padding: 0;
 	height: 100%;
 	-webkit-text-size-adjust: 100%;
-	 -webkit-tap-highlight-color: transparent;
+	text-size-adjust: 100%;
+	-webkit-tap-highlight-color: transparent;
+	tap-highlight-color: transparent;
 	position: relative;
 }
 
@@ -71,12 +73,21 @@ button:focus {
 	pointer-events: none;
 	background-color: rgba(0,0,0,0.6);
 	-webkit-border-radius: 5px;
+	border-radius: 5px;
 }
-#result.popup { -webkit-animation: popup 0.6s linear 1; }
+#result.popup {
+	-webkit-animation: popup 0.6s linear 1;
+	animation: popup 0.6s linear 1;
+}
 @-webkit-keyframes popup {
 	0% { opacity: 0; -webkit-transform: scale3d(0.9, 0.9, 0.9); -webkit-transform: scale(0.9, 0.9); }
 	5% { opacity: 1; -webkit-transform: scale3d(1, 1, 1); -webkit-transform: scale(1, 1); }
 	100% { opacity: 0; -webkit-transform: scale3d(1.1, 1.1, 1.1); -webkit-transform: scale(1.1, 1.1); }
+}
+@keyframes popup {
+	0% { opacity: 0; transform: scale3d(0.9, 0.9, 0.9); transform: scale(0.9, 0.9); }
+	5% { opacity: 1; transform: scale3d(1, 1, 1); transform: scale(1, 1); }
+	100% { opacity: 0; transform: scale3d(1.1, 1.1, 1.1); transform: scale(1.1, 1.1); }
 }
 #splash-image {
 	text-align: center;
@@ -92,13 +103,22 @@ button:focus {
 	background-position: 50% 50%;
 	background-repeat: no-repeat;
 	-webkit-background-size: 200px 35px;
+	background-size: 200px 35px;
 }
-.none { display: none; }
-#splash-image.fade-out { -webkit-animation: fade-out 0.3s linear 1; }
+#splash-image.none { display: none; }
+#splash-image.fade-out {
+	-webkit-animation: fade-out 0.3s linear 1;
+	animation: fade-out 0.3s linear 1;
+}
 @-webkit-keyframes fade-out {
 	0% { opacity: 1; -webkit-transform: scale(1); }
 	80% { opacity: 1; -webkit-transform: scale(0.97); }
 	100% { opacity: 0; -webkit-transform: scale(2); }
+}
+@keyframes fade-out {
+	0% { opacity: 1; transform: scale(1); }
+	80% { opacity: 1; transform: scale(0.97); }
+	100% { opacity: 0; transform: scale(2); }
 }
 
 </style>
@@ -238,9 +258,8 @@ button:focus {
 		
 		// スプラッシュ画像をフェードアウト
 		this.className = 'fade-out';
-		this.addEventListener('webkitAnimationEnd', function(){
-			this.className = 'none';
-		});
+		this.addEventListener("webkitAnimationEnd", function(){ this.className = "none"; });
+		this.addEventListener("animationend", function(){ this.className = "none"; });
 	});
 	
 	// サーバーから "from_server" が送られてくるのを監視
@@ -255,9 +274,8 @@ button:focus {
 		// ポップアップを表示
 		result.className = "popup";
 		result.innerHTML = id + '!';
-		result.addEventListener("webkitAnimationEnd", function(){
-			result.className = "";
-		});
+		result.addEventListener("webkitAnimationEnd", function(){ this.className = ""; });
+		result.addEventListener("animationend", function(){ this.className = ""; });
 	});
 	
 }(this));
